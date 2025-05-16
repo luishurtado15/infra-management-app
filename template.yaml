@@ -16,3 +16,18 @@ Resources:
       Tags:
         - Key: Environment
           Value: Production
+  MyS3Bucket2:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: my-unique-bucket-name-lmh-test-2
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+            ExpirationInDays: 365
+      Tags:
+        - Key: Environment
+          Value: Production
