@@ -50,7 +50,7 @@ Parameters:
   KeyPairName:
     Type: String
     Description: The name of an existing Amazon EC2 key pair in this region to use to SSH into the Amazon EC2 instances.
-    Default: us-east-1
+    Default: key-pair-lmh
   
   SecurityGroupSuffix:
     Type: String
@@ -463,6 +463,13 @@ Resources:
   #######################################################################################################
   #                                           BASTION SERVER                                            #
   #######################################################################################################
+  NewKeyPair:
+    Type: 'AWS::EC2::KeyPair'
+    Properties:
+      KeyName: !Ref KeyPairName
+      KeyType: rsa
+      KeyFormat: pem
+  
   # Bastion Server in public subnet 1
   MyBastionServer:
     Type: AWS::EC2::Instance
