@@ -1,1 +1,18 @@
 AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Lambda function to process S3 events and store data in DynamoDB
+Resources:
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: my-unique-bucket-name
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+            ExpirationInDays: 365
+      Tags:
+        - Key: Environment
+          Value: Production
