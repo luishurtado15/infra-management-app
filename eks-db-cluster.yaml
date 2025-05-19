@@ -433,7 +433,6 @@ Resources:
         - !Ref RDSSecurityGroup
       MultiAZ: false # Habilita la configuración Multi-AZ
       LicenseModel: !Ref DBLicenseModel
-      DBName: !Sub "${DBInstanceIdentifier}DB" # Nombre inicial de la base de datos (opcional)
       #PreferredBackupWindow: "02:00-03:00" # Hora UTC
       #PreferredMaintenanceWindow: "sun:03:00-sun:04:00" # Hora UTC
       #BackupRetentionPeriod: 7 # Días
