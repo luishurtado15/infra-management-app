@@ -67,11 +67,13 @@ Parameters:
     Description: Master username for the DB cluster
     Type: String
     NoEcho: true
+    Default: admin
   DBMasterUserPassword:
     Description: Master password for the DB cluster. Consider AWS Secrets Manager for production.
     Type: String
     NoEcho: true
-    MinLength: 8
+    MinLength: 4
+    Default: admin
 # Agrega más parámetros según sea necesario (KeyName para nodos EC2, etc.)
 
 
