@@ -304,4 +304,172 @@ Resources:
 
   # 11. Grupo de Seguridad para los Nodos EKS
   EKSNodeSecurityGroup:
-    Type: AWS::EC2::Securi
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${EKSClusterName}-NodeSG"
+      GroupDescription: Security group for EKS worker nodes
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref EKSControlPlaneSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 10250
+          ToPort: 10250
+          SourceSecurityGroupId: !GetAtt EKSNodeSecurityGroup.GroupId # De sí mismo
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${EKSClusterName}-NodeSG"
+
+  # 12. Grupo de Nodos EKS
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: !Sub "${EKSClusterName}-NodeGroup"
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      InstanceTypes:
+        - !Ref EKSNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref EKSNodeGroupMinSize
+        DesiredSize: !Ref EKSNodeGroupDesiredSize
+        MaxSize: !Ref EKSNodeGroupMaxSize
+      AmiType: AL2_x86_64
+      RemoteAccess:
+        Ec2SshKey: "" # Deja vacío si no necesitas acceso SSH o pon el nombre de tu KeyPair
+        SourceSecurityGroups: []
+      DiskSize: 80
+      SecurityGroups:
+        - !Ref EKSNodeSecurityGroup
+      Tags:
+        Name: !Sub "${EKSClusterName}-WorkerNode"
+    DependsOn:
+      - EKSCluster
+      - EKSNodeRole
+      - EKSNodeSecurityGroup
+
+  # 13. Grupo de Subredes para la Base de Datos
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB Subnet Group for RDS cluster
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub "${DBClusterIdentifier}-SubnetGroup"
+
+  # 14. Grupo de Seguridad para la Base de Datos
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${DBClusterIdentifier}-DBSG"
+      GroupDescription: Security group for RDS DB Cluster
+      VpcId: !Ref VPC
+      # La regla de entrada desde EKSNodeSecurityGroup se define por separado para evitar dependencia circular
+      Tags:
+        - Key: Name
+          Value: !Sub "${DBClusterIdentifier}-DBSG"
+
+  # Nueva Regla de Entrada para DBSecurityGroup (para romper el ciclo)
+  DBIngressFromEKSNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DBSecurityGroup # El SG al que se aplica la regla
+      IpProtocol: tcp
+      FromPort: 5432 # Puerto para PostgreSQL. Ajusta para MySQL (3306) u otros.
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup # El SG origen del tráfico
+    DependsOn: # Asegura que ambos SGs existan antes de crear la regla
+      - DBSecurityGroup
+      - EKSNodeSecurityGroup
+
+  # 15. Clúster RDS
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Ref DBClusterIdentifier
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterUserPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      StorageEncrypted: true
+      # BackupRetentionPeriod: 7 # Descomenta y ajusta si es necesario
+      # PreferredBackupWindow: "02:00-03:00" # Descomenta y ajusta si es necesario
+      # PreferredMaintenanceWindow: "sun:03:00-sun:04:00" # Descomenta y ajusta si es necesario
+      Tags:
+        - Key: Name
+          Value: !Ref DBClusterIdentifier
+    DependsOn: # Asegura que el SG y el SubnetGroup estén listos
+      - DBSecurityGroup
+      - DBSubnetGroup
+
+  # 16. Instancia 1 del Clúster RDS
+  DBInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${DBClusterIdentifier}-instance-1"
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref DBEngine
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${DBClusterIdentifier}-instance-1"
+    DependsOn: DBCluster
+
+  # 17. Instancia 2 del Clúster RDS
+  DBInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${DBClusterIdentifier}-instance-2"
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref DBEngine
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${DBClusterIdentifier}-instance-2"
+    DependsOn: DBInstance1 # O DBCluster si pueden crearse en paralelo después del clúster
+
+Outputs:
+  VPCId:
+    Description: ID of the created VPC
+    Value: !Ref VPC
+  EKSClusterNameOutput:
+    Description: Name of the EKS Cluster
+    Value: !Ref EKSCluster
+  EKSClusterArn:
+    Description: ARN of the EKS Cluster
+    Value: !GetAtt EKSCluster.Arn
+  EKSNodeRoleArn:
+    Description: ARN of the IAM Role for EKS Nodes
+    Value: !GetAtt EKSNodeRole.Arn
+  EKSNodeSecurityGroupId:
+    Description: Security Group ID for EKS Nodes
+    Value: !Ref EKSNodeSecurityGroup
+  DBSecurityGroupId:
+    Description: Security Group ID for the DB Cluster
+    Value: !Ref DBSecurityGroup
+  DBClusterEndpointAddress:
+    Description: Endpoint address for the DB Cluster
+    Value: !GetAtt DBCluster.Endpoint.Address
+  DBClusterEndpointPort:
+    Description: Endpoint port for the DB Cluster
+    Value: !GetAtt DBCluster.Endpoint.Port
+  DBClusterReadEndpointAddress:
+    Description: Read endpoint address for the DB Cluster (si aplica para Aurora)
+    Value: !GetAtt DBCluster.ReadEndpoint.Address
