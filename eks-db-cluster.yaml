@@ -42,11 +42,11 @@ Parameters:
   EKSNodeGroupMaxSize:
     Description: Maximum number of worker nodes
     Type: Number
-    Default: 3
+    Default: 2
   KubernetesVersion:
     Description: Kubernetes version for EKS cluster
     Type: String
-    Default: "1.32" # Verifica la última versión soportada
+    Default: "1.32" # Verifica la última versión soportada y ajústala si es necesario
   DBClusterIdentifier:
     Description: Identifier for the RDS DB cluster
     Type: String
@@ -67,15 +67,13 @@ Parameters:
     Description: Master username for the DB cluster
     Type: String
     NoEcho: true
-    Default: admin
+    Default: admin # Considera cambiar esto y usar un parámetro sin Default o AWS Secrets Manager
   DBMasterUserPassword:
     Description: Master password for the DB cluster. Consider AWS Secrets Manager for production.
     Type: String
     NoEcho: true
-    MinLength: 4
-    Default: admin
-# Agrega más parámetros según sea necesario (KeyName para nodos EC2, etc.)
-
+    MinLength: 4 # Ajustado a un mínimo más común, RDS puede requerir 8 o más.
+    Default: admin # Cambia esto y considera usar un parámetro sin Default o AWS Secrets Manager
 
 Resources:
   # 1. VPC
@@ -102,24 +100,24 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # 3. Subredes Públicas (para NAT Gateways y Load Balancers si los usas)
+  # 3. Subredes Públicas
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs ''] # AZ 1
+      AvailabilityZone: !Select [0, !GetAZs '']
       CidrBlock: !Ref PublicSubnet1CIDR
-      MapPublicIpOnLaunch: true # Importante para NAT Gateways
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: !Sub "${EKSClusterName}-PublicSubnet1"
-        - Key: kubernetes.io/role/elb # Para descubrimiento de LBs por Kubernetes
+        - Key: kubernetes.io/role/elb
           Value: "1"
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !GetAZs ''] # AZ 2
+      AvailabilityZone: !Select [1, !GetAZs '']
       CidrBlock: !Ref PublicSubnet2CIDR
       MapPublicIpOnLaunch: true
       Tags:
@@ -128,11 +126,12 @@ Resources:
         - Key: kubernetes.io/role/elb
           Value: "1"
 
-  # 4. EIPs y NAT Gateways (para que las subredes privadas accedan a internet)
+  # 4. EIPs y NAT Gateways
   EIP1:
     Type: AWS::EC2::EIP
     Properties:
-      Domain: vpc
+      Domain: vpc # Para versiones recientes de CFN, considera usar 'Tags' o remover 'Domain' si no es necesario.
+                  # o !If [IsVPC, 'vpc', !Ref 'AWS::NoValue'] si es condicional.
   EIP2:
     Type: AWS::EC2::EIP
     Properties:
@@ -154,7 +153,7 @@ Resources:
         - Key: Name
           Value: !Sub "${EKSClusterName}-NatGateway2"
 
-  # 5. Subredes Privadas (para Nodos EKS y Base de Datos)
+  # 5. Subredes Privadas
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -164,7 +163,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${EKSClusterName}-PrivateSubnet1"
-        - Key: kubernetes.io/role/internal-elb # Para descubrimiento de LBs internos
+        - Key: kubernetes.io/role/internal-elb
           Value: "1"
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -204,7 +203,7 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  PrivateRouteTable1: # Para subredes privadas en AZ1
+  PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
@@ -216,14 +215,14 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable1
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway1 # Ruta a través del NAT Gateway en la misma AZ
+      NatGatewayId: !Ref NatGateway1
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
       RouteTableId: !Ref PrivateRouteTable1
 
-  PrivateRouteTable2: # Para subredes privadas en AZ2
+  PrivateRouteTable2:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
@@ -235,14 +234,14 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable2
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway2 # Ruta a través del NAT Gateway en la misma AZ
+      NatGatewayId: !Ref NatGateway2
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
-# 7. Rol IAM para el Clúster EKS
+  # 7. Rol IAM para el Clúster EKS
   EKSClusterRole:
     Type: AWS::IAM::Role
     Properties:
@@ -272,11 +271,9 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy # Necesario para el CNI de VPC
-        # - arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess # Si tus nodos necesitan gestionar ELBs
-        # - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore # Para SSM access si es necesario
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
 
-# 9. Grupo de Seguridad para el Plano de Control EKS
+  # 9. Grupo de Seguridad para el Plano de Control EKS
   EKSControlPlaneSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -286,8 +283,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${EKSClusterName}-ControlPlaneSG"
-      # Las reglas de entrada/salida son gestionadas por EKS, pero puedes agregar reglas específicas si es necesario.
-      # Generalmente, los nodos se comunicarán con el plano de control en el puerto 443.
 
   # 10. Clúster EKS
   EKSCluster:
@@ -300,20 +295,13 @@ Resources:
         SecurityGroupIds:
           - !Ref EKSControlPlaneSecurityGroup
         SubnetIds:
-          # EKS recomienda subredes privadas para el plano de control, aunque las públicas también funcionan.
-          # Para mayor seguridad, si el endpoint es privado, usa subredes privadas.
-          # Si el endpoint es público, puedes usar públicas o privadas.
-          # Usaremos las mismas subredes que los nodos aquí por simplicidad, pero puedes dedicar subredes.
           - !Ref PrivateSubnet1
           - !Ref PrivateSubnet2
-        # EndpointPublicAccess: true # o false para endpoint privado
-        # EndpointPrivateAccess: false # o true para endpoint privado
       Tags:
         - Key: Name
           Value: !Ref EKSClusterName
-    DependsOn: # Asegura que los roles y la red estén listos
-      - EKSClusterRole
-      - PublicSubnet1 # y todas las subredes y componentes de red
+    DependsOn:
+      - EKSClusterRole # Asegura que el rol esté listo
 
   # 11. Grupo de Seguridad para los Nodos EKS
   EKSNodeSecurityGroup:
@@ -322,17 +310,16 @@ Resources:
       GroupName: !Sub "${EKSClusterName}-NodeSG"
       GroupDescription: Security group for EKS worker nodes
       VpcId: !Ref VPC
-      SecurityGroupIngress: # Permitir tráfico desde el plano de control y otros nodos
+      SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 443 # HTTPS al plano de control
+          FromPort: 443
           ToPort: 443
           SourceSecurityGroupId: !Ref EKSControlPlaneSecurityGroup
         - IpProtocol: tcp
-          FromPort: 10250 # Kubelet API (si es necesario entre nodos o para monitoreo)
+          FromPort: 10250
           ToPort: 10250
           SourceSecurityGroupId: !GetAtt EKSNodeSecurityGroup.GroupId # De sí mismo
-        # Agrega más reglas según sea necesario (ej. para NodePort services, métricas)
-      SecurityGroupEgress: # Permitir todo el tráfico saliente por defecto
+      SecurityGroupEgress:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
       Tags:
@@ -355,15 +342,12 @@ Resources:
         MinSize: !Ref EKSNodeGroupMinSize
         DesiredSize: !Ref EKSNodeGroupDesiredSize
         MaxSize: !Ref EKSNodeGroupMaxSize
-      AmiType: AL2_x86_64 # O el tipo de AMI que necesites
-      # LaunchTemplate: # Opcional para mayor personalización
-      #   Id: !Ref MyLaunchTemplate
-      #   Version: !GetAtt MyLaunchTemplate.LatestVersionNumber
-      RemoteAccess: # Opcional: permite SSH a los nodos (necesitarás un KeyPair)
-        Ec2SshKey: "" # Nombre de tu KeyPair EC2 si lo necesitas
-        SourceSecurityGroups: [] # SG desde donde permitirás SSH
-      DiskSize: 80 # Tamaño del disco en GiB
-      SecurityGroups: # Asocia el SG de los nodos
+      AmiType: AL2_x86_64
+      RemoteAccess:
+        Ec2SshKey: "" # Deja vacío si no necesitas acceso SSH o pon el nombre de tu KeyPair
+        SourceSecurityGroups: []
+      DiskSize: 80
+      SecurityGroups:
         - !Ref EKSNodeSecurityGroup
       Tags:
         Name: !Sub "${EKSClusterName}-WorkerNode"
@@ -372,12 +356,12 @@ Resources:
       - EKSNodeRole
       - EKSNodeSecurityGroup
 
-# 13. Grupo de Subredes para la Base de Datos
+  # 13. Grupo de Subredes para la Base de Datos
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
       DBSubnetGroupDescription: DB Subnet Group for RDS cluster
-      SubnetIds: # Usa las subredes privadas
+      SubnetIds:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
       Tags:
@@ -391,45 +375,46 @@ Resources:
       GroupName: !Sub "${DBClusterIdentifier}-DBSG"
       GroupDescription: Security group for RDS DB Cluster
       VpcId: !Ref VPC
-      SecurityGroupIngress: # Permitir tráfico desde los nodos EKS
-        - IpProtocol: tcp
-          # Puerto para PostgreSQL es 5432, MySQL es 3306. Ajusta según tu motor.
-          FromPort: 5432
-          ToPort: 5432
-          SourceSecurityGroupId: !Ref EKSNodeSecurityGroup # Desde el SG de los nodos EKS
+      # La regla de entrada desde EKSNodeSecurityGroup se define por separado para evitar dependencia circular
       Tags:
         - Key: Name
           Value: !Sub "${DBClusterIdentifier}-DBSG"
 
-  # 15. Clúster RDS (Aurora PostgreSQL con 2 instancias)
-  # Si usas un motor que no sea Aurora, podrías necesitar definir AWS::RDS::DBInstance dos veces.
-  # Aurora maneja el concepto de clúster con instancias de lector/escritor.
+  # Nueva Regla de Entrada para DBSecurityGroup (para romper el ciclo)
+  DBIngressFromEKSNodes:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DBSecurityGroup # El SG al que se aplica la regla
+      IpProtocol: tcp
+      FromPort: 5432 # Puerto para PostgreSQL. Ajusta para MySQL (3306) u otros.
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref EKSNodeSecurityGroup # El SG origen del tráfico
+    DependsOn: # Asegura que ambos SGs existan antes de crear la regla
+      - DBSecurityGroup
+      - EKSNodeSecurityGroup
+
+  # 15. Clúster RDS
   DBCluster:
     Type: AWS::RDS::DBCluster
     Properties:
       DBClusterIdentifier: !Ref DBClusterIdentifier
       Engine: !Ref DBEngine
       EngineVersion: !Ref DBEngineVersion
-      # Para Aurora, el número de instancias se define creando recursos AWS::RDS::DBInstance
-      # que se asocian a este clúster. Sin embargo, algunos motores Aurora pueden
-      # escalar automáticamente o puedes definir réplicas de lectura.
-      # Para tener explícitamente 2 instancias, crearemos 2 AWS::RDS::DBInstance.
       MasterUsername: !Ref DBMasterUsername
       MasterUserPassword: !Ref DBMasterUserPassword
       DBSubnetGroupName: !Ref DBSubnetGroup
       VpcSecurityGroupIds:
         - !Ref DBSecurityGroup
-      #BackupRetentionPeriod: 7
-      #PreferredBackupWindow: 02:00-03:00
-      #PreferredMaintenanceWindow: sun:03:00-sun:04:00
       StorageEncrypted: true
-      # AvailabilityZones: # Aurora puede usar las AZs de las subredes del DBSubnetGroup
-      #   - !Select [0, !GetAZs '']
-      #   - !Select [1, !GetAZs '']
+      # BackupRetentionPeriod: 7 # Descomenta y ajusta si es necesario
+      # PreferredBackupWindow: "02:00-03:00" # Descomenta y ajusta si es necesario
+      # PreferredMaintenanceWindow: "sun:03:00-sun:04:00" # Descomenta y ajusta si es necesario
       Tags:
         - Key: Name
           Value: !Ref DBClusterIdentifier
-    # DeletionPolicy: Snapshot # Opcional: crea un snapshot final al borrar
+    DependsOn: # Asegura que el SG y el SubnetGroup estén listos
+      - DBSecurityGroup
+      - DBSubnetGroup
 
   # 16. Instancia 1 del Clúster RDS
   DBInstance1:
@@ -438,17 +423,15 @@ Resources:
       DBInstanceIdentifier: !Sub "${DBClusterIdentifier}-instance-1"
       DBClusterIdentifier: !Ref DBCluster
       DBInstanceClass: !Ref DBInstanceClass
-      Engine: !Ref DBEngine # Heredado del clúster para Aurora
-      # EngineVersion: !Ref DBEngineVersion # Heredado del clúster para Aurora
+      Engine: !Ref DBEngine
       DBSubnetGroupName: !Ref DBSubnetGroup
       PubliclyAccessible: false
-      # AvailabilityZone: !Select [0, !GetAZs ''] # Aurora lo maneja
       Tags:
         - Key: Name
           Value: !Sub "${DBClusterIdentifier}-instance-1"
     DependsOn: DBCluster
 
-  # 17. Instancia 2 del Clúster RDS (Réplica de Lectura para Aurora)
+  # 17. Instancia 2 del Clúster RDS
   DBInstance2:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -456,15 +439,12 @@ Resources:
       DBClusterIdentifier: !Ref DBCluster
       DBInstanceClass: !Ref DBInstanceClass
       Engine: !Ref DBEngine
-      # EngineVersion: !Ref DBEngineVersion
       DBSubnetGroupName: !Ref DBSubnetGroup
       PubliclyAccessible: false
-      # AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub "${DBClusterIdentifier}-instance-2"
-    DependsOn: DBInstance1 # Asegura que la instancia primaria se cree primero o al mismo tiempo
-  
+    DependsOn: DBInstance1 # O DBCluster si pueden crearse en paralelo después del clúster
 
 Outputs:
   VPCId:
@@ -482,6 +462,9 @@ Outputs:
   EKSNodeSecurityGroupId:
     Description: Security Group ID for EKS Nodes
     Value: !Ref EKSNodeSecurityGroup
+  DBSecurityGroupId:
+    Description: Security Group ID for the DB Cluster
+    Value: !Ref DBSecurityGroup
   DBClusterEndpointAddress:
     Description: Endpoint address for the DB Cluster
     Value: !GetAtt DBCluster.Endpoint.Address
