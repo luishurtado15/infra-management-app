@@ -61,7 +61,7 @@ Parameters:
   DBEngineVersion:
     Description: SQL Server engine version. Verify supported versions for your chosen engine and region.
     Type: String
-    Default: "16.00.4185.3" # Ejemplo para SQL Server 2019 SE, verifica la actual
+    Default: "15.00.4153.1.v1" # Ejemplo para SQL Server 2019 SE, verifica la actual
   DBInstanceClass:
     Description: Instance class for the RDS DB instance.
     Type: String
