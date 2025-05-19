@@ -391,9 +391,8 @@ Resources:
         DesiredSize: !Ref EKSNodeGroupDesiredSize
         MaxSize: !Ref EKSNodeGroupMaxSize
       AmiType: AL2_x86_64 # Amazon Linux 2 para EKS
-      DiskSize: 80 # Tamaño del disco en GiB para los nodos
-      SecurityGroups: # Asocia el SG de los nodos
-         - !Ref EKSNodeSecurityGroup
+      DiskSize: 20 # Tamaño del disco en GiB para los nodos
+      CapacityType: SPOT
       # RemoteAccess: # Opcional para acceso SSH, requiere un KeyPair
       #   Ec2SshKey: "your-ec2-keypair-name"
       #   SourceSecurityGroups: [ "sg-xxxxxxxxxxxxxxxxx" ] # SG desde donde permitir SSH
@@ -402,7 +401,7 @@ Resources:
     DependsOn:
       - EKSCluster
       - EKSNodeRole
-      - EKSNodeSecurityGroup # Asegura que el SG de nodos exista
+
 
   # ------------------------------------------------------------------------------------
   # RDS SQL Server Multi-AZ Instance
