@@ -411,8 +411,10 @@ Resources:
     Properties:
       DBSubnetGroupDescription: DB Subnet Group for RDS SQL Server instance.
       SubnetIds: # Instancia RDS en subredes privadas
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
+        #- !Ref PrivateSubnet1
+        #- !Ref PrivateSubnet2
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
       Tags:
         - Key: Name
           Value: !Sub "${DBInstanceIdentifier}-SubnetGroup"
